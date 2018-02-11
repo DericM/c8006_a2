@@ -17,20 +17,28 @@ indent() { sed 's/^/  /'; }
 bold=$(tput bold)
 normal=$(tput sgr0)
 
+function bold_text() {
+    echo "${bold}$1${normal}"
+}
+
 function init_client() {
     echo Modifying ${bold}/etc/resolv.conf${normal}
     sudo echo "nameserver 8.8.8.8" > /etc/resolv.conf
     echo "Flushing Routing Rules"
     #ip route del default
     #ip addr flush dev $LOCAL_INTERFACE_NAME
-    echo "Deactivating Lab Interface: ${bold}$LAB_INTERFACE_NAME ${normal}"
+    echo "Deactivating Lab Interface: $(bold_text $LAB_INTERFACE_NAME)"
     ifconfig $LAB_INTERFACE_NAME down
 
-    echo "Enabling Local Interface: ${bold}$LOCAL_INTERFACE_IP${normal}"
+    echo "Enabling Local Interface: $(bold_text $LOCAL_INTERFACE_IP)"
     ifconfig $LOCAL_INTERFACE_NAME $LOCAL_INTERFACE_IP up
 
-    echo "Adding Routing Rule for: ${bold}$LOCAL_INTERFACE_GATEWAY_IP${normal}"
+    echo "Adding Routing Rule for: $(bold_text $LOCAL_INTERFACE_GATEWAY_IP)"
     route add default gw $LOCAL_INTERFACE_GATEWAY_IP
+}
+
+function reset_client() {
+    echo Enabling $(bold_text $LAB_INTERFACE_NAME)
 }
 
 function test_client() {
@@ -40,6 +48,9 @@ function test_client() {
 if [ $1 = 'init' ]; then
     echo Initializing The Client
     init_client | indent
+elif [ $1 = 'reset' ]; then
+    echo Resetting Client
+    reset_client wat | indent
 else
     echo no valid argument passed
 fi
