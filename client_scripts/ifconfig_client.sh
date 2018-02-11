@@ -30,7 +30,7 @@ function init_client() {
     echo "Deactivating Lab Interface: $(bold_text $LAB_INTERFACE_NAME)"
     ifconfig $LAB_INTERFACE_NAME down
 
-    echo "Enabling Local Interface: $(bold_text $LOCAL_INTERFACE_IP)"
+    echo "Enabling Local Interface: $(bold_text $LOCAL_INTERFACE_NAME : $LOCAL_INTERFACE_IP)"
     ifconfig $LOCAL_INTERFACE_NAME $LOCAL_INTERFACE_IP up
 
     echo "Adding Routing Rule for: $(bold_text $LOCAL_INTERFACE_GATEWAY_IP)"
@@ -38,7 +38,11 @@ function init_client() {
 }
 
 function reset_client() {
-    echo Enabling $(bold_text $LAB_INTERFACE_NAME)
+    echo Enabling Lab Interface: $(bold_text $LAB_INTERFACE_NAME)
+    ifconfig $LAB_INTERFACE_NAME up
+
+    echo Disabling Local Interface: $(bold_text $LOCAL_INTERFACE_NAME)
+    ifconfig $LOCAL_INTERFACE_NAME down
 }
 
 function test_client() {
