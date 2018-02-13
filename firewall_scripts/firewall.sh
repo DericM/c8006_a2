@@ -1,26 +1,34 @@
 
-LAB_INTERFACE_NAME=eno1
-LAB_INTERFACE_IP=$(ifconfig $LAB_INTERFACE_NAME | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
+PUBLIC_IFACE=eno1
+PUBLIC_NETWORK=192.168.0.0/24
 
-LOCAL_INTERFACE_NAME=enp3s2
-LOCAL_INTERFACE_IP=192.168.10.1
+PRIVATE_IFACE=enp3s2
+PRIVATE_NETWORK=192.168.10.0/24
 
-CLIENT_IP=192.168.10.2
+FW_PUBLIC_IP=$(ifconfig $PUBLIC_IFACE | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
 
-DNS_SERVER=8.8.8.8
+FW_GATEWAY_IP=192.168.0.100
 
 
+FW_PRIVATE_IP=192.168.10.1
 
-TCP_ALLOWED_PORTS="80 8080 22 443"
-UDP_ALLOWED_PORTS="221 322"
-ICMP_ALLOWED_TYPES="0 13 14"
+SVR_PRIVATE_IP=192.168.10.2
+DNS_SERVER_IP=8.8.8.8
+
 
 TCP_ALWAYS_BLOCKED_PORTS="32768:32775 137:139 111 515"
 UDP_ALWAYS_BLOCKED_PORTS="32768:32775 137:139"
 ICMP_ALWAYS_BLOCKED_TYPES=""
 
 
-#depmod -a 
+TCP_ALLOWED_PORTS="80 8080 22 443 53"
+UDP_ALLOWED_PORTS="221 322 53"
+ICMP_ALLOWED_TYPES="0 10 11 12 13 14"
+
+
+
+
+#depmod -a
 #sudo modprobe ip_tables
 #sudo modprobe ip_conntrack
 #sudo modprobe ip_conntrack_ftp
@@ -32,14 +40,14 @@ ICMP_ALWAYS_BLOCKED_TYPES=""
 #sudo echo 'ip_tables' >> /etc/modules
 
 function init(){
-    
-    #ip addr flush dev $LAB_INTERFACE_NAME
-    #ip addr flush dev $LOCAL_INTERFACE_NAME
-    echo "Set DNS Server to $DNS_SERVER"
-    sudo echo "nameserver $DNS_SERVER" > /etc/resolve.conf
 
-    echo "Activate $LOCAL_INTERFACE_NAME with ip: $LOCAL_INTERFACE_IP"
-    sudo ifconfig $LOCAL_INTERFACE_NAME $LOCAL_INTERFACE_IP up
+    #ip addr flush dev $PUBLIC_IFACE
+    #ip addr flush dev $LOCAL_INTERFACE_NAME
+    echo "Set DNS Server to $DNS_SERVER_IP"
+    sudo echo "nameserver $DNS_SERVER_IP" > /etc/resolve.conf
+
+    echo "Activate $PRIVATE_IFACE with ip: $FW_PRIVATE_IP"
+    sudo ifconfig $PRIVATE_IFACE $FW_PRIVATE_IP up
 
     echo "Set ip_forward flag."
     sudo echo "1" >/proc/sys/net/ipv4/ip_forward
@@ -48,13 +56,14 @@ function init(){
     #route add default gw 192.168.0.100
 
     echo "Allow routing from this computer to lab computers"
-    sudo route add -net 192.168.0.0 netmask 255.255.255.0 gw $LAB_INTERFACE_IP
+    sudo route add -net 192.168.0.0 netmask 255.255.255.0 gw $FW_GATEWAY_IP
 
     echo "Allow routing from local computers to Firewall gateway"
-    sudo route add -net 192.168.10.0/24 gw $LOCAL_INTERFACE_IP
-    
-    iptables -t nat -A POSTROUTING -j SNAT -s 192.168.10.0/24 -o $LAB_INTERFACE_NAME --to-source $LAB_INTERFACE_IP
-    iptables -t nat -A PREROUTING -j DNAT -i $LAB_INTERFACE_NAME --to-destination $CLIENT_IP
+    sudo route add -net 192.168.10.0/24 gw $FW_PRIVATE_IP
+
+    iptables -t nat -A POSTROUTING -j SNAT -s 192.168.10.0/24 -o $PUBLIC_IFACE --to-source $FW_PUBLIC_IP
+    iptables -t nat -A PREROUTING -j DNAT -i $PUBLIC_IFACE --to-destination $SVR_PRIVATE_IP
+
 }
 
 function clearIptables(){
@@ -76,74 +85,61 @@ function clearIptables(){
     iptables -t mangle -X
 }
 
+
+
 function forwardChain(){
+    sudo iptables -P INPUT DROP
+    sudo iptables -P OUTPUT DROP
+    sudo iptables -P FORWARD DROP
 
-    iptables -P INPUT DROP
-	iptables -P OUTPUT DROP
-    iptables -P FORWARD DROP
-
-    for port in $TCP_ALWAYS_BLOCKED_PORTS
-	do
-		iptables -A FORWARD -j DROP -p tcp -s 192.168.0.0/24 --dport $port 
-		iptables -A FORWARD -j DROP -p tcp -s $LAB_INTERFACE_IP --dport $port
-    done
-
-    for port in $UDP_ALWAYS_BLOCKED_PORTS
-	do
-		iptables -A FORWARD -j DROP -p udp -s 192.168.0.0/24 --dport $port 
-		iptables -A FORWARD -j DROP -p udp -s $LAB_INTERFACE_IP --dport $port
-    done
-    
-    for type in $ICMP_ALWAYS_BLOCKED_TYPES
-	do
-		iptables -A FORWARD -j DROP -p icmp -s 192.168.0.0/24 --icmp-type $type 
-		iptables -A FORWARD -j DROP -p icmp -s $LAB_INTERFACE_IP --icmp-type $type
-    done
+    sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    sudo iptables -A FORWARD -i $PRIVATE_IFACE -o $PUBLIC_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
     for port in $TCP_ALLOWED_PORTS
 	do
-		iptables -A FORWARD -j ACCEPT -p tcp -s 192.168.0.0/24 --dport $port 
-		iptables -A FORWARD -j ACCEPT -p tcp -s $LAB_INTERFACE_IP --dport $port
+		openTcpPort $port
     done
 
     for port in $UDP_ALLOWED_PORTS
 	do
-		iptables -A FORWARD -j ACCEPT -p udp -s 192.168.0.0/24 --dport $port 
-		iptables -A FORWARD -j ACCEPT -p udp -s $LAB_INTERFACE_IP --dport $port
+		openUdpPort $port
     done
-    
+
     for type in $ICMP_ALLOWED_TYPES
 	do
-		iptables -A FORWARD -j ACCEPT -p icmp -s 192.168.0.0/24 --icmp-type $type 
-		iptables -A FORWARD -j ACCEPT -p icmp -s $LAB_INTERFACE_IP --icmp-type $type
+		allowIcmpType $type
     done
 
-    
 }
 
-function forwardChain2(){
-    portRangeOpperation $TCP_ALWAYS_BLOCKED_PORTS "DROP" "tcp" "--dport"
-    portRangeOpperation $UDP_ALWAYS_BLOCKED_PORTS "DROP" "udp" "--dport"
-    portRangeOpperation $ICMP_ALWAYS_BLOCKED_PORTS "DROP" "icmp" "--icmp-type"
 
-    portRangeOpperation $TCP_ALLOWED_PORTS "ALLOW" "tcp" "--dport"
-    portRangeOpperation $UDP_ALLOWED_PORTS "ALLOW" "udp" "--dport"
-    portRangeOpperation $ICMP_ALLOWED_PORTS "ALLOW" "icmp" "--icmp-type"
+function openTcpPort(){
+    echo "Open tcp port: " $1
+    sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
+    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 }
 
-function portRangeOpperation(){
-    for item in $1
-	do
-		iptables -A FORWARD -j $2 -p $3 $4 $item -s 192.168.0.0/24  
-		iptables -A FORWARD -j $2 -p $3 $4 $item -s $LAB_INTERFACE_IP
-    done
+function openUdpPort(){
+    echo "Open udp port: " $1
+    #sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p udp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
+    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p udp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p udp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 }
 
+function allowIcmpType(){
+    echo "Allow icmp type: " $1
+    #sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p icmp --syn --icmp-type $1 -m conntrack --ctstate NEW -j ACCEPT
+    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p icmp --icmp-type $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p icmp --icmp-type $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+}
+
+
+#sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport 80 -m conntrack --ctstate NEW -j ACCEPT
+#sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport 80 -j DNAT --to-destination $SVR_PRIVATE_IP
+#sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport 80 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 
 
 clearIptables
 init
-#forwardChain
-
-
-
+forwardChain
