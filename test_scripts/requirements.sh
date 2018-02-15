@@ -1,29 +1,29 @@
-SERVER_PUBLIC_IP=192.168.0.13
+#!/bin/sh
+source ../config.sh
 
-TCP_ALLOWED_PORTS="80 8080 22 443 53 2222"
-UDP_ALLOWED_PORTS="221 322 53"
+#SERVER_PUBLIC_IP=192.168.0.13
 
+#TCP_ALLOWED_PORTS="80 8080 22 443 53"
+#UDP_ALLOWED_PORTS="221 322 53"
 
+#indent() { sed 's/^/  /'; }
 
+#RED=$(tput setaf 1)
+#GREEN=$(tput setaf 2)
+#bold=$(tput bold)
+#normal=$(tput sgr0)
 
-indent() { sed 's/^/  /'; }
+#function bt() {
+#    echo "${bold}$1${normal}"
+#}
 
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-bold=$(tput bold)
-normal=$(tput sgr0)
+#function rt() {
+#    echo "${RED}$1${normal}"
+#}
 
-function bt() {
-    echo "${bold}$1${normal}"
-}
-
-function rt() {
-    echo "${RED}$1${normal}"
-}
-
-function gt() {
-    echo "${GREEN}$1${normal}"
-}
+#function gt() {
+#    echo "${GREEN}$1${normal}"
+#}
 
 function test__allowed_tcp_ports(){
     for port in $TCP_ALLOWED_PORTS
@@ -57,19 +57,25 @@ function test_allowed_udp_ports(){
 
 
 function run_tests(){
+    SERVER_PUBLIC_IP=$1
     echo
     echo "$(bt Scanning) $(gt ALLOWED) $(bt TCP) Ports"
-    test__allowed_tcp_ports | indent
+    test__allowed_tcp_ports $1 | indent
 
     echo
     echo "$(bt Scanning) $(gt ALLOWED) $(bt UDP) Ports"
-    test_allowed_udp_ports | indent
+    test_allowed_udp_ports $1 | indent
 
 
 }
 
 function main() {
-    run_tests
+    run_tests $1
 }
 
-main
+if [[ $1 == "" ]]
+then
+    echo "Please Enter Target"
+else
+    main $1
+fi
