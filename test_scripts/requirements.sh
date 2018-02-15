@@ -5,7 +5,7 @@ source ../config.sh
 function test__allowed_tcp_ports(){
     for port in $TCP_ALLOWED_PORTS
     do
-        hping3 -c 1 -q -S -p $port $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -q -S -p $port $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
@@ -19,7 +19,7 @@ function test__allowed_tcp_ports(){
 function test_allowed_udp_ports(){
     for port in $UDP_ALLOWED_PORTS
     do
-        hping3 -c 1 -q -p $port --udp $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -q -p $port --udp $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
@@ -33,7 +33,7 @@ function test_allowed_udp_ports(){
 function test_allowed_icmp_ports(){
     for type in $ICMP_ALLOWED_TYPES
     do
-        hping3 -c 1 -C $type $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -C $type $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
@@ -48,7 +48,7 @@ function test_allowed_icmp_ports(){
 function test_blocked_tcp_ports(){
     for port in $TCP_BLOCKED_PORTS
     do
-        hping3 -c 1 -q -S -p $port $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -q -S -p $port $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success == 0 ]]
         then
@@ -62,7 +62,7 @@ function test_blocked_tcp_ports(){
 function test_blocked_udp_ports(){
     for port in $UDP_BLOCKED_PORTS
     do
-        hping3 -c 1 -q -p $port --udp $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -q -p $port --udp $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success == 0 ]]
         then
@@ -76,7 +76,7 @@ function test_blocked_udp_ports(){
 function test_blocked_icmp_ports(){
     for type in $ICMP_BLOCKED_TYPES
     do
-        hping3 -c 1 -C $type $SERVER_PUBLIC_IP #> /dev/null 2>&1
+        hping3 -c 1 -C $type $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success == 0 ]]
         then
