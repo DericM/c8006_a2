@@ -6,10 +6,10 @@
 # LOCAL_* variables are internal interfaces and ips.
 #
 
-LAB_INTERFACE_NAME=eno1
-LOCAL_INTERFACE_NAME=enp3s2
-LOCAL_INTERFACE_IP=192.168.10.2
-LOCAL_INTERFACE_GATEWAY_IP=192.168.10.1
+PUBLIC_IFACE=eno1
+PRIVATE_IFACE=enp3s2
+SVR_PRIVATE_IP=192.168.10.2
+FW_PRIVATE_IP_GATEWAY=192.168.10.1
 
 
 indent() { sed 's/^/  /'; }
@@ -26,23 +26,23 @@ function init_client() {
     sudo echo "nameserver 8.8.8.8" > /etc/resolv.conf
     echo "Flushing Routing Rules"
     #ip route del default
-    #ip addr flush dev $LOCAL_INTERFACE_NAME
-    echo "Deactivating Lab Interface: $(bold_text $LAB_INTERFACE_NAME)"
-    ifconfig $LAB_INTERFACE_NAME down
+    #ip addr flush dev $PRIVATE_IFACE
+    echo "Deactivating Lab Interface: $(bold_text $PUBLIC_IFACE)"
+    sudo ifconfig $PUBLIC_IFACE down
 
-    echo "Enabling Local Interface: $(bold_text $LOCAL_INTERFACE_NAME : $LOCAL_INTERFACE_IP)"
-    ifconfig $LOCAL_INTERFACE_NAME $LOCAL_INTERFACE_IP up
+    echo "Enabling Local Interface: $(bold_text $PRIVATE_IFACE : $SVR_PRIVATE_IP)"
+    sudo ifconfig $PRIVATE_IFACE $SVR_PRIVATE_IP up
 
-    echo "Adding Routing Rule for: $(bold_text $LOCAL_INTERFACE_GATEWAY_IP)"
-    route add default gw $LOCAL_INTERFACE_GATEWAY_IP
+    echo "Adding Routing Rule for: $(bold_text $FW_PRIVATE_IP_GATEWAY)"
+    sudo route add default gw $FW_PRIVATE_IP_GATEWAY
 }
 
 function reset_client() {
-    echo Enabling Lab Interface: $(bold_text $LAB_INTERFACE_NAME)
-    ifconfig $LAB_INTERFACE_NAME up
+    echo Enabling Lab Interface: $(bold_text $PUBLIC_IFACE)
+    ifconfig $PUBLIC_IFACE up
 
-    echo Disabling Local Interface: $(bold_text $LOCAL_INTERFACE_NAME)
-    ifconfig $LOCAL_INTERFACE_NAME down
+    echo Disabling Local Interface: $(bold_text $PRIVATE_IFACE)
+    ifconfig $PRIVATE_IFACE down
 }
 
 function test_client() {
