@@ -96,7 +96,7 @@ function forwardChain(){
 		blockUdpPort $port
     done
 
-    for type in $ICMP_BLOCKED_PORTS
+    for type in $ICMP_BLOCKED_TYPES
 	do
 		blockIcmpType $type
     done
