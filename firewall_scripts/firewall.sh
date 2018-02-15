@@ -1,27 +1,10 @@
+#!/bin/sh
 
-PUBLIC_IFACE=eno1
-PUBLIC_NETWORK=192.168.0.0/24
-
-PRIVATE_IFACE=enp3s2
-PRIVATE_NETWORK=192.168.10.0/24
-
-FW_PUBLIC_IP=$(ifconfig $PUBLIC_IFACE | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
-FW_GATEWAY_IP=192.168.0.100
-FW_PRIVATE_IP=192.168.10.1
-
-SVR_PRIVATE_IP=192.168.10.2
-DNS_SERVER_IP=8.8.8.8
+source ../config.sh
 
 
-TCP_BLOCKED_PORTS="32768 32769 32770 32771 32772 32773 32774 32775 137 138 139 111 515"
-UDP_BLOCKED_PORTS="32768 32769 32770 32771 32772 32773 32774 32775 137 138 139"
-ICMP_BLOCKED_TYPES=""
-
-TCP_ALLOWED_PORTS="80 8080 22 443 53"
-UDP_ALLOWED_PORTS="221 322 53"
-ICMP_ALLOWED_TYPES="0 10 11 12 13 14"
-
-IPT=iptables
+# Allows firewall access to internet
+DEBUG=ACCEPT
 
 function init(){
 
@@ -50,7 +33,7 @@ function init(){
 
 }
 
-function clear$IPT(){
+function clearIptables(){
     $IPT -P INPUT ACCEPT
     $IPT -P FORWARD ACCEPT
     $IPT -P OUTPUT ACCEPT
@@ -71,12 +54,12 @@ function clear$IPT(){
 
 
 function inputChain(){
-    sudo $IPT -P INPUT ACCEPT
+    sudo $IPT -P INPUT $DEBUG
 }
 
 
 function outputChain(){
-    sudo $IPT -P OUTPUT ACCEPT
+    sudo $IPT -P OUTPUT $DEBUG
 }
 
 
@@ -90,7 +73,15 @@ function forwardChain(){
 
     #DROP packets from outside targeting the private network
     #because people from the outside shouldnt know about it
-    $IPT -A FORWARD -p all -d $PRIVATE_NETWORK -j DROP
+    $IPT -A FORWARD -i $PUBLIC_IFACE -s $PRIVATE_NETWORK -j DROP
+
+    #DROP syn fin packets
+    echo "Drop SYN-FIN packets"
+    $IPT -A FORWARD -p tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
+
+    #DROP telnet
+    $IPT -A FORWARD -p tcp --sport 23 -j DROP
+    $IPT -A FORWARD -p tcp --dport 23 -j DROP
 
     sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
     sudo $IPT -A FORWARD -i $PRIVATE_IFACE -o $PUBLIC_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
@@ -125,8 +116,6 @@ function forwardChain(){
 		allowIcmpType $type
     done
 
-
-
 }
 
 
@@ -135,10 +124,8 @@ function openTcpPort(){
     #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
     #sudo $IPT -A FORWARD -p tcp --dport $1 -j ACCEPT
 
-    $IPT -A FORWARD -p tcp --sport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
+    #$IPT -A FORWARD -p tcp --sport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
     $IPT -A FORWARD -p tcp --dport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
-
-
     echo "RESULT: $?"
     #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
     #sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
@@ -146,7 +133,8 @@ function openTcpPort(){
 
 function openUdpPort(){
     echo "Open udp port: $1"
-    sudo $IPT -A FORWARD -p udp --dport $1 -j ACCEPT
+    $IPT -A FORWARD -p udp --dport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
+    #sudo $IPT -A FORWARD -p udp --dport $1 -j ACCEPT
     echo "RESULT: $?"
     #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p udp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
     #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p udp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
@@ -155,7 +143,8 @@ function openUdpPort(){
 
 function allowIcmpType(){
     echo "Allow icmp type: $1"
-    sudo $IPT -A FORWARD -p icmp --icmp-type $1 -j ACCEPT
+    $IPT -A FORWARD -p icmp --icmp-type $1 -m state --state NEW,ESTABLISHED -j ACCEPT
+    #sudo $IPT -A FORWARD -p icmp --icmp-type $1 -j ACCEPT
     echo "RESULT: $?"
     #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p icmp --syn --icmp-type $1 -m conntrack --ctstate NEW -j ACCEPT
     #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p icmp --icmp-type $1 -j DNAT --to-destination $SVR_PRIVATE_IP
@@ -186,12 +175,22 @@ function dropIPSpoofingPackets(){
     echo "RESULT: $?"
 }
 
-#sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport 80 -m conntrack --ctstate NEW -j ACCEPT
-#sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport 80 -j DNAT --to-destination $SVR_PRIVATE_IP
-#sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport 80 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+function optimizeFTP(){
+    echo "Optimizing FTP"
+    $IPT PREROUTING -t mangle -p tcp --sport ftp -j TOS --set-tos Minimize-Delay
+    $IPT PREROUTING -t mangle -p tcp --dport ftp -j TOS --set-tos Minimize-Delay
+    $IPT PREROUTING -t mangle -p tcp --sport ftp-data -j TOS --set-tos Maximize-Throughput
+    $IPT PREROUTING -t mangle -p tcp --dport ftp-data -j TOS --set-tos Maximize-Throughput
+}
+
+function optimizeSSH(){
+    echo "Optimizing SSH"
+    $IPT PREROUTING -t mangle -p tcp --sport ssh -j TOS --set-tos Minimize-Delay
+    $IPT PREROUTING -t mangle -p tcp --dport ssh -j TOS --set-tos Minimize-Delay
+}
 
 
-clear$IPT
+clearIptables
 init
 inputChain
 outputChain
