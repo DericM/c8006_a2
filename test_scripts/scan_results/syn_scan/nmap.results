@@ -1,1 +1,0 @@
-# Nmap 7.60 scan initiated Sat Feb 10 19:21:54 2018 as: nmap -sS -Pn -p- -T4 -vv --reason -oN ./scan_results/syn_scan/nmap.results 192.168.0.13
