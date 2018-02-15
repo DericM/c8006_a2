@@ -33,7 +33,7 @@ function test_allowed_udp_ports(){
 function test_allowed_icmp_ports(){
     for type in $ICMP_ALLOWED_TYPES
     do
-        hping3 -c 1 -C $type $SERVER_PUBLIC_IP # > /dev/null 2>&1
+        hping3 -c 1 -C $type $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
