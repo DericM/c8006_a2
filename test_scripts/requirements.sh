@@ -1,4 +1,4 @@
-SERVER_PUBLIC_IP=192.168.10.1
+SERVER_PUBLIC_IP=192.168.0.13
 
 TCP_ALLOWED_PORTS="80 8080 22 443 53 2222"
 UDP_ALLOWED_PORTS="221 322 53"
@@ -42,7 +42,7 @@ function test__allowed_tcp_ports(){
 function test_allowed_udp_ports(){
     for port in $UDP_ALLOWED_PORTS
     do
-        hping3 -c 1 -q -p $port $SERVER_PUBLIC_IP > /dev/null 2>&1
+        hping3 -c 1 -q -p $port --udp $SERVER_PUBLIC_IP > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
