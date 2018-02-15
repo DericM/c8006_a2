@@ -31,15 +31,15 @@ function test_allowed_udp_ports(){
 }
 
 function test_allowed_icmp_ports(){
-    for port in $ICMP_ALLOWED_TYPES
+    for type in $ICMP_ALLOWED_TYPES
     do
-        hping3 -c 1 -q -p $port --icmp $SERVER_PUBLIC_IP > /dev/null 2>&1
+        hping3 -c 1 -C $type $SERVER_PUBLIC_IP # > /dev/null 2>&1
         success=$?
         if [[ $success != 0 ]]
         then
-            echo -e "$SERVER_PUBLIC_IP:$(bt $port) TEST: $(rt FAILED)"
+            echo -e "$SERVER_PUBLIC_IP:$(bt $type) TEST: $(rt FAILED)"
         else
-            echo -e "$SERVER_PUBLIC_IP:$(bt $port) TEST: $(gt PASSED)"
+            echo -e "$SERVER_PUBLIC_IP:$(bt $type) TEST: $(gt PASSED)"
         fi
     done
 }
