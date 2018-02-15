@@ -6,38 +6,22 @@ PRIVATE_IFACE=enp3s2
 PRIVATE_NETWORK=192.168.10.0/24
 
 FW_PUBLIC_IP=$(ifconfig $PUBLIC_IFACE | sed -En 's/127.0.0.1//;s/.*inet (addr:)?(([0-9]*\.){3}[0-9]*).*/\2/p')
-
 FW_GATEWAY_IP=192.168.0.100
-
-
 FW_PRIVATE_IP=192.168.10.1
 
 SVR_PRIVATE_IP=192.168.10.2
 DNS_SERVER_IP=8.8.8.8
 
 
-TCP_ALWAYS_BLOCKED_PORTS="32768:32775 137:139 111 515"
-UDP_ALWAYS_BLOCKED_PORTS="32768:32775 137:139"
-ICMP_ALWAYS_BLOCKED_TYPES=""
-
+TCP_BLOCKED_PORTS="32768 32769 32770 32771 32772 32773 32774 32775 137 138 139 111 515"
+UDP_BLOCKED_PORTS="32768 32769 32770 32771 32772 32773 32774 32775 137 138 139"
+ICMP_BLOCKED_TYPES=""
 
 TCP_ALLOWED_PORTS="80 8080 22 443 53"
 UDP_ALLOWED_PORTS="221 322 53"
 ICMP_ALLOWED_TYPES="0 10 11 12 13 14"
 
-
-
-
-#depmod -a
-#sudo modprobe ip_tables
-#sudo modprobe ip_conntrack
-#sudo modprobe ip_conntrack_ftp
-#sudo modprobe ip_conntrack_irc
-#sudo modprobe iptable_nat
-#sudo modprobe ip_nat_ftp
-#sudo modprobe ip_nat_irc
-
-#sudo echo 'ip_tables' >> /etc/modules
+IPT=iptables
 
 function init(){
 
@@ -61,39 +45,70 @@ function init(){
     echo "Allow routing from local computers to Firewall gateway"
     sudo route add -net 192.168.10.0/24 gw $FW_PRIVATE_IP
 
-    iptables -t nat -A POSTROUTING -j SNAT -s 192.168.10.0/24 -o $PUBLIC_IFACE --to-source $FW_PUBLIC_IP
-    iptables -t nat -A PREROUTING -j DNAT -i $PUBLIC_IFACE --to-destination $SVR_PRIVATE_IP
+    $IPT -t nat -A POSTROUTING -j SNAT -s 192.168.10.0/24 -o $PUBLIC_IFACE --to-source $FW_PUBLIC_IP
+    $IPT -t nat -A PREROUTING -j DNAT -i $PUBLIC_IFACE --to-destination $SVR_PRIVATE_IP
 
 }
 
-function clearIptables(){
-    iptables -P INPUT ACCEPT
-    iptables -P FORWARD ACCEPT
-    iptables -P OUTPUT ACCEPT
-    iptables -t nat -P PREROUTING ACCEPT
-    iptables -t nat -P POSTROUTING ACCEPT
-    iptables -t nat -P OUTPUT ACCEPT
-    iptables -t mangle -P PREROUTING ACCEPT
-    iptables -t mangle -P OUTPUT ACCEPT
+function clear$IPT(){
+    $IPT -P INPUT ACCEPT
+    $IPT -P FORWARD ACCEPT
+    $IPT -P OUTPUT ACCEPT
+    $IPT -t nat -P PREROUTING ACCEPT
+    $IPT -t nat -P POSTROUTING ACCEPT
+    $IPT -t nat -P OUTPUT ACCEPT
+    $IPT -t mangle -P PREROUTING ACCEPT
+    $IPT -t mangle -P OUTPUT ACCEPT
 
-    iptables -F
-    iptables -t nat -F
-    iptables -t mangle -F
+    $IPT -F
+    $IPT -t nat -F
+    $IPT -t mangle -F
 
-    iptables -X
-    iptables -t nat -X
-    iptables -t mangle -X
+    $IPT -X
+    $IPT -t nat -X
+    $IPT -t mangle -X
+}
+
+
+function inputChain(){
+    sudo $IPT -P INPUT ACCEPT
+}
+
+
+function outputChain(){
+    sudo $IPT -P OUTPUT ACCEPT
 }
 
 
 
 function forwardChain(){
-    sudo iptables -P INPUT DROP
-    sudo iptables -P OUTPUT DROP
-    sudo iptables -P FORWARD DROP
+    sudo $IPT -P FORWARD DROP
 
-    sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-    sudo iptables -A FORWARD -i $PRIVATE_IFACE -o $PUBLIC_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    #ACCEPT Fragments
+    #because reasons.
+    $IPT -A FORWARD -f -j ACCEPT
+
+    #DROP packets from outside targeting the private network
+    #because people from the outside shouldnt know about it
+    $IPT -A FORWARD -p all -d $PRIVATE_NETWORK -j DROP
+
+    sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    sudo $IPT -A FORWARD -i $PRIVATE_IFACE -o $PUBLIC_IFACE -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    for port in $TCP_BLOCKED_PORTS
+	do
+		blockTcpPort $port
+    done
+
+    for port in $UDP_BLOCKED_PORTS
+	do
+		blockUdpPort $port
+    done
+
+    for type in $ICMP_BLOCKED_PORTS
+	do
+		blockIcmpType $type
+    done
 
     for port in $TCP_ALLOWED_PORTS
 	do
@@ -110,36 +125,74 @@ function forwardChain(){
 		allowIcmpType $type
     done
 
+
+
 }
 
 
 function openTcpPort(){
-    echo "Open tcp port: " $1
-    sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
-    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
-    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+    echo "Open tcp port: $1"
+    #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
+    #sudo $IPT -A FORWARD -p tcp --dport $1 -j ACCEPT
+
+    $IPT -A FORWARD -p tcp --sport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
+    $IPT -A FORWARD -p tcp --dport $1 -m state --state NEW,ESTABLISHED -j ACCEPT
+
+
+    echo "RESULT: $?"
+    #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    #sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 }
 
 function openUdpPort(){
-    echo "Open udp port: " $1
-    #sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p udp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
-    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p udp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
-    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p udp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+    echo "Open udp port: $1"
+    sudo $IPT -A FORWARD -p udp --dport $1 -j ACCEPT
+    echo "RESULT: $?"
+    #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p udp --syn --dport $1 -m conntrack --ctstate NEW -j ACCEPT
+    #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p udp --dport $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    #sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p udp --dport $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 }
 
 function allowIcmpType(){
-    echo "Allow icmp type: " $1
-    #sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p icmp --syn --icmp-type $1 -m conntrack --ctstate NEW -j ACCEPT
-    sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p icmp --icmp-type $1 -j DNAT --to-destination $SVR_PRIVATE_IP
-    sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p icmp --icmp-type $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+    echo "Allow icmp type: $1"
+    sudo $IPT -A FORWARD -p icmp --icmp-type $1 -j ACCEPT
+    echo "RESULT: $?"
+    #sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p icmp --syn --icmp-type $1 -m conntrack --ctstate NEW -j ACCEPT
+    #sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p icmp --icmp-type $1 -j DNAT --to-destination $SVR_PRIVATE_IP
+    #sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p icmp --icmp-type $1 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+}
+
+function blockTcpPort(){
+    echo "Block tcp port: $1"
+    sudo $IPT -A FORWARD -p tcp --dport $1 -j DROP
+    echo "RESULT: $?"
+}
+
+function blockUdpPort(){
+    echo "Block udp port: $1"
+    sudo $IPT -A FORWARD -p udp --dport $1 -j DROP
+    echo "RESULT: $?"
+}
+
+function blockIcmpType(){
+    echo "Block icmp type: $1"
+    sudo $IPT -A FORWARD -p icmp --icmp-type $1 -j DROP
+    echo "RESULT: $?"
 }
 
 
-#sudo iptables -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport 80 -m conntrack --ctstate NEW -j ACCEPT
-#sudo iptables -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport 80 -j DNAT --to-destination $SVR_PRIVATE_IP
-#sudo iptables -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport 80 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
+function dropIPSpoofingPackets(){
+    sudo $IPT -A FORWARD -p tcp --dport $1 -j DROP
+    echo "RESULT: $?"
+}
+
+#sudo $IPT -A FORWARD -i $PUBLIC_IFACE -o $PRIVATE_IFACE -p tcp --syn --dport 80 -m conntrack --ctstate NEW -j ACCEPT
+#sudo $IPT -t nat -A PREROUTING -i $PUBLIC_IFACE -p tcp --dport 80 -j DNAT --to-destination $SVR_PRIVATE_IP
+#sudo $IPT -t nat -A POSTROUTING -o $PRIVATE_IFACE -p tcp --dport 80 -d $SVR_PRIVATE_IP -j SNAT --to-source $FW_PRIVATE_IP
 
 
-clearIptables
+clear$IPT
 init
+inputChain
+outputChain
 forwardChain
